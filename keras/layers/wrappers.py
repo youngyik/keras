@@ -24,18 +24,53 @@ class Wrapper(Layer):
         super(Wrapper, self).__init__(**kwargs)
 
     def build(self, input_shape=None):
-        # Assumes that self.layer is already set.
-        # Should be called at the end of .build() in the children classes.
-        self.trainable_weights = getattr(self.layer, 'trainable_weights', [])
-        self.non_trainable_weights = getattr(self.layer, 'non_trainable_weights', [])
-        self.updates = getattr(self.layer, 'updates', [])
-        self.losses = getattr(self.layer, 'losses', [])
-        self.constraints = getattr(self.layer, 'constraints', {})
         self.built = True
 
+    @property
+    def activity_regularizer(self):
+        if hasattr(self.layer, 'activity_regularizer'):
+            return self.layer.activity_regularizer
+        else:
+            return None
+
+    @property
+    def trainable_weights(self):
+        return self.layer.trainable_weights
+
+    @property
+    def non_trainable_weights(self):
+        return self.layer.non_trainable_weights
+
+    @property
+    def updates(self):
+        if hasattr(self.layer, 'updates'):
+            return self.layer.updates
+        return []
+
+    def get_updates_for(self, inputs=None):
+        if inputs is None:
+            updates = self.layer.get_updates_for(None)
+            return updates + super(Wrapper, self).get_updates_for(None)
+        return super(Wrapper, self).get_updates_for(inputs)
+
+    @property
+    def losses(self):
+        if hasattr(self.layer, 'losses'):
+            return self.layer.losses
+        return []
+
+    def get_losses_for(self, inputs=None):
+        if inputs is None:
+            losses = self.layer.get_losses_for(None)
+            return losses + super(Wrapper, self).get_losses_for(None)
+        return super(Wrapper, self).get_losses_for(inputs)
+
+    @property
+    def constraints(self):
+        return self.layer.constraints
+
     def get_weights(self):
-        weights = self.layer.get_weights()
-        return weights
+        return self.layer.get_weights()
 
     def set_weights(self, weights):
         self.layer.set_weights(weights)
@@ -158,6 +193,9 @@ class Bidirectional(Wrapper):
             If None, the outputs will not be combined,
             they will be returned as a list.
 
+    # Raises
+        ValueError: In case of invalid `merge_mode` argument.
+
     # Examples
 
     ```python
@@ -210,11 +248,12 @@ class Bidirectional(Wrapper):
             return [self.forward_layer.compute_output_shape(input_shape)] * 2
 
     def call(self, inputs, training=None, mask=None):
-        func_args = inspect.getargspec(self.layer.call).args
         kwargs = {}
-        for arg in ('training', 'mask'):
-            if arg in func_args:
-                kwargs[arg] = eval(arg)
+        func_args = inspect.getargspec(self.layer.call).args
+        if 'training' in func_args:
+            kwargs['training'] = training
+        if 'mask' in func_args:
+            kwargs['mask'] = mask
 
         y = self.forward_layer.call(inputs, **kwargs)
         y_rev = self.backward_layer.call(inputs, **kwargs)

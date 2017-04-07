@@ -27,7 +27,7 @@ except ImportError:
     h5py = None
 
 
-def save_model(model, filepath, overwrite=True):
+def save_model(model, filepath, overwrite=True, include_optimizer=True):
     """Save a model to a HDF5 file.
 
     The saved model contains:
@@ -45,6 +45,7 @@ def save_model(model, filepath, overwrite=True):
         overwrite: Whether we should overwrite any existing
             model at the target location, or instead
             ask the user with a manual prompt.
+        include_optimizer: If True, save optimizer's state together.
 
     # Raises
         ImportError: if h5py is not available.
@@ -108,7 +109,7 @@ def save_model(model, filepath, overwrite=True):
         model_layers = model.layers
     topology.save_weights_to_hdf5_group(model_weights_group, model_layers)
 
-    if hasattr(model, 'optimizer'):
+    if include_optimizer and hasattr(model, 'optimizer'):
         if isinstance(model.optimizer, optimizers.TFOptimizer):
             warnings.warn(
                 'TensorFlow optimizers do not '
@@ -213,7 +214,14 @@ def load_model(filepath, custom_objects=None):
         if isinstance(obj, dict):
             deserialized = {}
             for key, value in obj.items():
-                if value in custom_objects:
+                deserialized[key] = []
+                if isinstance(value, list):
+                    for element in value:
+                        if element in custom_objects:
+                            deserialized[key].append(custom_objects[element])
+                        else:
+                            deserialized[key].append(element)
+                elif value in custom_objects:
                     deserialized[key] = custom_objects[value]
                 else:
                     deserialized[key] = value
@@ -1041,8 +1049,10 @@ class Sequential(Model):
                 - A tuple (inputs, targets, sample_weights).
             validation_steps: Only relevant if `validation_data`
                 is a generator.
-                Number of samples to use from validation generator
-                at the end of every epoch.
+                Number of steps to yield from validation generator
+                at the end of every epoch. It should typically
+                be equal to the number of unique samples of your
+                validation dataset divided by the batch size.
             class_weight: Dictionary mapping class indices to a weight
                 for the class.
             max_q_size: Maximum size for the generator queue
@@ -1074,7 +1084,7 @@ class Sequential(Model):
                         # and labels, from each line in the file
                         x, y = process_line(line)
                         yield (x, y)
-                    f.close()
+                        f.close()
 
             model.fit_generator(generate_arrays_from_file('/my_file.txt'),
                                 samples_per_epoch=10000, epochs=10)
